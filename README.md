@@ -9,6 +9,8 @@
 ## Why this project exists
 Ever since Google discontinued its Desktop Search app it became harder for me to quickly find the *exact* piece of information buried inside gigabytes of mixed PDF / DOCX / TXT files. Traditional OS search (name / modified date) is not enough when you only remember a concept or a sentence fragment. So I started building my own lightweight, local-first AI file search + chat assistant using Retrieval Augmented Generation (RAG). This repository is the foundation: an end‑to‑end pipeline from raw files → vector index → question answering.
 
+This project is a practical example of Retrieval‑Augmented Generation (RAG) – combining deterministic document retrieval with optional generative answering for grounded responses.
+
 ## What it does
 * Recursively scans a chosen root folder (and all subfolders)
 * Extracts text from PDF / DOCX / TXT (extensible)
@@ -18,6 +20,35 @@ Ever since Google discontinued its Desktop Search app it became harder for me to
 * Exposes a simple FastAPI endpoint to ask questions → retrieves top relevant chunks → (placeholder LLM step) returns an answer
 
 Later you can plug in any LLM (OpenAI / Anthropic / local) to replace the placeholder answer logic.
+
+## Architecture (mini diagram)
+```
+Documents (PDF / DOCX / TXT)
+		↓
+	Ingestion & Chunking
+		↓
+ Embeddings (Local SentenceTransformers / OpenAI)
+		↓
+   FAISS Vector Index + SQLite Metadata
+		↓
+		FastAPI (RAG Pipeline)
+		↓
+		React UI
+		↓
+		User
+```
+
+Mermaid version (GitHub supported):
+
+```mermaid
+flowchart LR
+	A[Documents\nPDF / DOCX / TXT] --> B[Ingestion & Chunking]
+	B --> C[Embeddings\nLocal ST / OpenAI]
+	C --> D[(FAISS + SQLite)]
+	D --> E[FastAPI RAG API]
+	E --> F[React UI]
+	F --> G[User]
+```
 
 ## Tech stack
 * Python 3.11+ (3.13 still has wheel gaps for some deps – use 3.11 for stability)
@@ -243,6 +274,17 @@ Q: Promenio sam `MIN_SCORE`, moram li re-ingest? → Ne.
 Q: Promenio sam `EMBEDDING_MODEL`? → Da, `--reset` + ingest.
 Q: Dodao sam još .md fajlova? → Samo pokreni ingest (bez `--reset`) da se dodaju (stari ostaju).
 Q: Hoću da uklonim fajlove koje sam obrisao iz izvora? → Trenutno ručno: `--reset` pa ingest.
+
+## Enterprise / Practical Use Cases
+Primeri gde lokalni RAG pomaže (bez slanja podataka u cloud):
+
+* Law firms / advokatske kancelarije – brzo pretraživanje ugovora i klauzula (clause pinpointing)
+* Banks / finansijske institucije – compliance i policy dokumentacija (što je već interna, osetljiva)
+* Academia / research timovi – Q&A preko velikih korpusa naučnih radova ili skripti
+* Internal onboarding – novi zaposleni postavljaju pitanja nad internom dokumentacijom
+* Regulated industries – lokalna obrada bez izlaska podataka (privacy / sovereignty)
+
+Ove domene dobijaju najviše vrednosti kada: (1) dokumenti su polustrukturirani, (2) postoji česta potreba za preciznim odlomcima, (3) privatnost onemogućava SaaS servise.
 
 ## Frontend (React + Vite)
 The project ships with an optional React UI providing live controls (k, min_score, LLM on/off), chunk score previews, keyword coverage, confidence & reason labels, and raw prompt inspection.
