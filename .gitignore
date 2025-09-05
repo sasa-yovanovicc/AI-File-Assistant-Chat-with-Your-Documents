@@ -1,0 +1,17 @@
+__pycache__/
+.env
+.env.*
+*.pyc
+.cache/
+vector_store/
+.embeddings_cache/
+.openai_cache/
+*.db
+.DS_Store
+.venv/
+data/
+.git/
+pvt/
+frontend/node_modules/
+frontend/dist/
+frontend/.parcel-cache/

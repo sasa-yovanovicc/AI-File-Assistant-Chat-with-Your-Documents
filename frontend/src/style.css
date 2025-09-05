@@ -1,0 +1,10 @@
+body { font-family: Arial, sans-serif; margin: 1.5rem; background:#f7f7f7; color:#222; }
+.app { max-width: 800px; margin: auto; }
+textarea { width:100%; min-height:140px; padding:10px; font-size:14px; resize:vertical; }
+.chat-form .row { margin-top: .5rem; display:flex; gap:.5rem; }
+button { padding:8px 16px; background:#009e5a; color:#fff; border:1px solid #00884d; border-radius:6px; cursor:pointer; }
+button:disabled { opacity:.6; cursor:default; }
+.answer { background:#fff; padding:12px 14px; border:1px solid #ddd; border-radius:6px; margin-top:1rem; white-space:pre-wrap; }
+.sources code { background:#eee; padding:2px 4px; margin-right:4px; border-radius:4px; font-size:12px; }
+.error { color:#b00020; margin-top:1rem; }
+footer { margin-top:2rem; font-size:11px; color:#555; }
