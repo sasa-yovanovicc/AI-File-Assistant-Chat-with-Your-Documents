@@ -38,7 +38,6 @@ Documents (PDF / DOCX / TXT)
 		User
 ```
 
-Mermaid version (GitHub supported):
 
 ```mermaid
 flowchart LR
