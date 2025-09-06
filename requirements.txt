@@ -11,3 +11,4 @@ tqdm
 numpy
 sqlalchemy
 rich
+rapidfuzz

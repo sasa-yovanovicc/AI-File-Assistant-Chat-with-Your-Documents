@@ -1,6 +1,8 @@
 __pycache__/
 .env
-.env.*
+.env.work.*
+!.env.example
+!.env.openai.example
 *.pyc
 .cache/
 vector_store/

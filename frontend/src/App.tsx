@@ -53,7 +53,7 @@ export default function App() {
           <label style={{display:'flex', flexDirection:'column', fontSize:12}}>min_score
             <input type="text" placeholder="auto" value={minScore} onChange={e=>setMinScore(e.target.value)} style={{width:80}} />
           </label>
-          <label style={{display:'flex', alignItems:'center', gap:4, fontSize:12}}>LLM
+          <label style={{display:'flex', alignItems:'center', gap:4, fontSize:12}} title="Use AI (OpenAI/Ollama) for generative answers vs simple text extraction">LLM
             <input type="checkbox" checked={useLLM} onChange={e=>setUseLLM(e.target.checked)} />
           </label>
           <label style={{display:'flex', alignItems:'center', gap:4, fontSize:12}}>Show prompt

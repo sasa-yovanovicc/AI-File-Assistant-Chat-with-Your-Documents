@@ -14,17 +14,18 @@ from pydantic import BaseModel
 
 from .rag_pipeline import answer_question, MIN_SCORE as DEFAULT_MIN_SCORE
 from .vector_store import store
+from .config import API_HOST, API_PORT, FRONTEND_VITE_PORT, FRONTEND_REACT_PORT
 
 app = FastAPI(title="AI File Assistant")
 
 app.add_middleware(
   CORSMiddleware,
   allow_origins=[
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-  ],
+        f"http://127.0.0.1:{FRONTEND_VITE_PORT}",
+        "http://localhost:5173",
+        f"http://127.0.0.1:{FRONTEND_REACT_PORT}",
+        "http://localhost:3000",
+    ],
   allow_credentials=True,
   allow_methods=["*"],
   allow_headers=["*"],
@@ -88,6 +89,6 @@ def root():
   }
 
 
-if __name__ == "__main__":  # pragma: no cover
-  import uvicorn
-  uvicorn.run("src.api:app", host="127.0.0.1", port=8000, reload=True)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("src.api:app", host=API_HOST, port=API_PORT, reload=True)

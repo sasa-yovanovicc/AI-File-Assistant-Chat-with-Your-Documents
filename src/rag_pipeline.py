@@ -2,22 +2,34 @@ from __future__ import annotations
 from typing import List
 import re
 from .embeddings import embed_query
-from .config import OLLAMA_MODEL
+from .config import (
+    OLLAMA_MODEL, USE_OPENAI, OPENAI_API_KEY, OPENAI_MODEL,
+    RETRIEVAL_MIN_SCORE, KEYWORD_COVERAGE_THRESHOLD, STRICT_MODE_ENABLED,
+    LEXICAL_COVERAGE_WEIGHT, SHORT_SENTENCE_PENALTY, MIN_ANSWER_SCORE,
+    LEXICAL_RERANK_WEIGHT, MIN_DEFINITION_LENGTH, MAX_DEFINITION_LENGTH,
+    DEFINITION_NAME_WEIGHT, MIN_KEYWORD_LENGTH, MAX_ANSWER_LENGTH,
+    DEFAULT_RETRIEVAL_K, DEFAULT_ANSWER_K, OPENAI_TEMPERATURE, OPENAI_MAX_TOKENS
+)
 try:  # local LLM optional
     from .llm_local import generate_answer as _ollama_generate
 except Exception:  # pragma: no cover
     _ollama_generate = None
+try:  # OpenAI optional
+    import openai
+except Exception:  # pragma: no cover
+    openai = None
 from .vector_store import store
+from rapidfuzz import fuzz
 
 SYSTEM_PROMPT = (
-    "Answer clearly using ONLY the provided context text chunks. If the answer is not present, reply: 'Not enough information in the local documents.'"
+    "Answer in an encyclopedic style using ONLY the provided context text chunks. Be precise, factual, and concise like a Wikipedia entry. If the answer is not present, reply: 'Not enough information in the local documents.'"
 )
 
 # Minimal similarity threshold (cosine) to accept a hit as relevant.
 # Cosine similarities for unrelated chunks are often < 0.15; adjust if needed.
-MIN_SCORE = 0.45 # base threshold (can be overridden per request)
-STRICT_MODE = False  # if True, enforce keyword coverage guard to reduce hallucinations
-MIN_KEYWORD_COVERAGE = 0.25  # proportion of distinct query keywords that must appear across contexts
+MIN_SCORE = RETRIEVAL_MIN_SCORE # base threshold (can be overridden per request)
+STRICT_MODE = STRICT_MODE_ENABLED  # if True, enforce keyword coverage guard to reduce hallucinations
+MIN_KEYWORD_COVERAGE = KEYWORD_COVERAGE_THRESHOLD  # proportion of distinct query keywords that must appear across contexts
 
 # Minimal Serbian/English stopword subset for naive keyword scoring
 STOPWORDS = {
@@ -49,13 +61,13 @@ def _sentences(text: str) -> List[str]:
 
 def _keywords(q: str) -> List[str]:
     tokens = re.findall(r'[A-Za-zÀ-ž0-9]+', q.lower())
-    return [t for t in tokens if t not in STOPWORDS and len(t) > 2]
+    return [t for t in tokens if t not in STOPWORDS and len(t) > MIN_KEYWORD_LENGTH]
 
 def extract_answer(question: str, contexts: List[str]) -> str:
     """Very small heuristic extractor: choose best scoring sentence among top contexts.
 
     Improvements:
-    * Lexical score = (# keyword hits) + 0.3 * coverage_ratio
+    * Lexical score = (# keyword hits) + LEXICAL_COVERAGE_WEIGHT * coverage_ratio
     * Penalize sentences that are extremely short (< 30 chars)
     * Return fallback if nothing scores
     """
@@ -71,13 +83,13 @@ def extract_answer(question: str, contexts: List[str]) -> str:
             if not hits:
                 continue
             coverage = len(set(hits)) / (len(set(kw)) or 1)
-            score = len(hits) + 0.3 * coverage
+            score = len(hits) + LEXICAL_COVERAGE_WEIGHT * coverage
             if len(s) < 30:
-                score -= 0.5
+                score -= SHORT_SENTENCE_PENALTY
             if score > best_score:
                 best_score = score
                 best_sent = s
-    if best_sent and best_score > 0.2:
+    if best_sent and best_score > MIN_ANSWER_SCORE:
         return best_sent[:400]
     return contexts[0][:350]
 
@@ -110,7 +122,7 @@ def _definitional_extract(question: str, contexts: List[str]) -> str | None:
                 continue
             # Score: length penalty + position of ' je '
             length = len(sent)
-            if length < 15 or length > 400:
+            if length < MIN_DEFINITION_LENGTH or length > MAX_DEFINITION_LENGTH:
                 continue
             pos = norm_low.find(' je ')
             if pos == -1:
@@ -118,7 +130,7 @@ def _definitional_extract(question: str, contexts: List[str]) -> str | None:
             score = 1.0
             if pos != -1:
                 score += max(0, 60 - pos) / 60  # earlier definition slightly better
-            score += sum(1 for v in name_vars if v.lower() in norm_low) * 0.3
+            score += sum(1 for v in name_vars if v.lower() in norm_low) * DEFINITION_NAME_WEIGHT
             if score > best_score:
                 best_score = score
                 best = sent
@@ -140,10 +152,10 @@ def _lexical_rerank(question: str, hits: List[dict]) -> List[dict]:
         text_low = h['text'].lower()
         overlap = sum(1 for k in kw if k in text_low)
         # blend semantic (h['score']) and lexical overlap
-        h['blended'] = h['score'] + 0.08 * overlap
+        h['blended'] = h['score'] + LEXICAL_RERANK_WEIGHT * overlap
     return sorted(hits, key=lambda x: x.get('blended', x['score']), reverse=True)
 
-def retrieve(question: str, k: int = 5):
+def retrieve(question: str, k: int = DEFAULT_RETRIEVAL_K):
     qv = embed_query(question)
     hits = store.search(qv, k=max(k, 8))  # pull a few more for reranking
     if not hits:
@@ -166,12 +178,12 @@ def _clean_answer(ans: str) -> str:
         cleaned.append(l)
     ans2 = "\n".join(cleaned).strip()
     # Truncate if extremely long
-    if len(ans2) > 1200:
-        ans2 = ans2[:1200] + '...'
+    if len(ans2) > MAX_ANSWER_LENGTH:
+        ans2 = ans2[:MAX_ANSWER_LENGTH] + '...'
     return ans2
 
 
-def answer_question(question: str, k: int = 3, use_local_llm: bool = True) -> dict:
+def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: bool = True) -> dict:
     hits = retrieve(question, k=k)
     contexts = [h['text'] for h in hits]
     prompt = build_prompt(question, contexts)
@@ -203,15 +215,33 @@ def answer_question(question: str, k: int = 3, use_local_llm: bool = True) -> di
         if low_conf:
             confidence = "low"
             reason = f"score<{MIN_SCORE:.2f}"  # still try to extract
-        # Build LLM prompt
-        if use_local_llm and _ollama_generate is not None:
+        # Build LLM prompt and choose provider
+        if use_local_llm:
             ctx_joined = "\n\n".join(f"[DOC {i+1}]\n{c}" for i, c in enumerate(contexts[:6]))
             prompt = (
-                "Answer briefly in English using ONLY the provided context. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
+                "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
                 f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
             )
+            
+            # Try OpenAI first if configured, fallback to Ollama
             try:
-                gen = _ollama_generate(prompt, model=OLLAMA_MODEL, stream=False)
+                if USE_OPENAI and OPENAI_API_KEY and openai:
+                    # Use OpenAI GPT for completion
+                    openai.api_key = OPENAI_API_KEY
+                    response = openai.chat.completions.create(
+                        model=OPENAI_MODEL,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=OPENAI_MAX_TOKENS,
+                        temperature=OPENAI_TEMPERATURE
+                    )
+                    gen = response.choices[0].message.content
+                elif _ollama_generate is not None:
+                    # Fallback to Ollama
+                    gen = _ollama_generate(prompt, model=OLLAMA_MODEL, stream=False)
+                else:
+                    # No LLM available, use heuristic
+                    gen = None
+                
                 if isinstance(gen, str) and gen.strip():
                     # Optional post-LLM guard: if LLM answer contains none of the keywords, fallback
                     cleaned = _clean_answer(gen)
@@ -224,8 +254,10 @@ def answer_question(question: str, k: int = 3, use_local_llm: bool = True) -> di
                         answer = cleaned
                 else:
                     answer = extract_answer(question, contexts)
-            except Exception:
+            except Exception as e:
+                # Fallback to heuristic if LLM fails
                 answer = extract_answer(question, contexts)
+                print(f"LLM error: {e}")  # for debugging
         else:
             # Try definitional pattern first (e.g., "Ko je <ime>?")
             defin = _definitional_extract(question, contexts)
@@ -252,3 +284,22 @@ def answer_question(question: str, k: int = 3, use_local_llm: bool = True) -> di
         "confidence": confidence,
         "reason": reason,
     }
+
+def fuzzy_keywords(question: str) -> list[str]:
+    # Extract all words longer than 2 characters, ignore stopwords
+    tokens = _keywords(question)
+    # Normalize diacritics
+    return [_norm(t) for t in tokens]
+
+def extract_relevant_chunks(chunks, question, threshold=80):
+    # Fuzzy match: use rapidfuzz for comparing keywords with chunk text
+    keywords = fuzzy_keywords(question)
+    hits = []
+    for chunk in chunks:
+        txt_norm = _norm(chunk['text'].lower())
+        for kw in keywords:
+            # Fuzzy match: score > threshold (e.g. 80/100)
+            if any(fuzz.partial_ratio(kw, part) > threshold for part in txt_norm.split()):
+                hits.append(chunk)
+                break
+    return hits if hits else chunks

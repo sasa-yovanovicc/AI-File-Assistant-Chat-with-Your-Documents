@@ -328,4 +328,4 @@ Open an issue for bugs or feature requests. PRs welcome once an issue is discuss
 MIT
 
 ---
-If this helps you reclaim your local knowledge base, give it a ⭐ and keep building.
+If this helps you reclaim your local knowledge base, give it a star and keep building.
