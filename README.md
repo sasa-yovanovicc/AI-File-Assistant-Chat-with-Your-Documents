@@ -1,10 +1,11 @@
 # AI File Assistant – Chat with Your Documents
 
 > **Status: Experimental / Work In Progress**  
-> Ovo je eksperimentalni projekat u aktivnom razvoju – nije production‑ready.  
-> Nema garancija za stabilnost API-ja, kompatibilnost formata indeksa ili tačnost odgovora.  
-> Nemoj koristiti za povjerljive / osetljive podatke bez dodatnih bezbednosnih mera.  
-> Očekuj promene u strukturi indeksa, parametrima i ponašanju bez backward kompatibilnosti.
+> Status: Experimental / Work In Progress
+> This is an experimental project in active development – not production-ready.
+> There are no guarantees for API stability, index format compatibility, or answer accuracy.
+> Do not use it for confidential / sensitive data without additional security measures.
+> Expect changes in index structure, parameters, and behavior without backward compatibility.
 
 ## Why this project exists
 Ever since Google discontinued its Desktop Search app it became harder for me to quickly find the *exact* piece of information buried inside gigabytes of mixed PDF / DOCX / TXT files. Traditional OS search (name / modified date) is not enough when you only remember a concept or a sentence fragment. So I started building my own lightweight, local-first AI file search + chat assistant using Retrieval Augmented Generation (RAG). This repository is the foundation: an end‑to‑end pipeline from raw files → vector index → question answering.
@@ -38,7 +39,6 @@ Documents (PDF / DOCX / TXT)
 		User
 ```
 
-Mermaid version (GitHub supported):
 
 ```mermaid
 flowchart LR
@@ -270,21 +270,24 @@ To change embedding model:
 Large models may increase RAM and ingest time. Start with smaller ones (MiniLM, paraphrase-multilingual) before moving up.
 
 ### FAQ quick answers
-Q: Promenio sam `MIN_SCORE`, moram li re-ingest? → Ne.
-Q: Promenio sam `EMBEDDING_MODEL`? → Da, `--reset` + ingest.
-Q: Dodao sam još .md fajlova? → Samo pokreni ingest (bez `--reset`) da se dodaju (stari ostaju).
-Q: Hoću da uklonim fajlove koje sam obrisao iz izvora? → Trenutno ručno: `--reset` pa ingest.
+Q: I changed `MIN_SCORE`, do I need to re-ingest? → No.
+Q: I changed `EMBEDDING_MODEL`? → Yes, `--reset` + ingest.
+Q: I added more .md files? → Just run ingest (without `--reset`) to add them (old ones stay).
+Q: I want to remove files I deleted from source? → Currently manual: --reset then ingest.
 
-## Enterprise / Practical Use Cases
-Primeri gde lokalni RAG pomaže (bez slanja podataka u cloud):
+### Enterprise / Practical Use Cases
 
-* Law firms / advokatske kancelarije – brzo pretraživanje ugovora i klauzula (clause pinpointing)
-* Banks / finansijske institucije – compliance i policy dokumentacija (što je već interna, osetljiva)
-* Academia / research timovi – Q&A preko velikih korpusa naučnih radova ili skripti
-* Internal onboarding – novi zaposleni postavljaju pitanja nad internom dokumentacijom
-* Regulated industries – lokalna obrada bez izlaska podataka (privacy / sovereignty)
+Examples where local RAG helps (without sending data to the cloud):
+- Law firms – quick search of contracts and clauses (clause pinpointing)
+- Banks / financial institutions – compliance and policy documentation (which is already internal, sensitive)
+- Academia / research teams – Q&A across large corpora of scientific papers or scripts
+- Internal onboarding – new employees asking questions over internal documentation
+- Regulated industries – local processing without data leaving the premises (privacy / sovereignty)
 
-Ove domene dobijaju najviše vrednosti kada: (1) dokumenti su polustrukturirani, (2) postoji česta potreba za preciznim odlomcima, (3) privatnost onemogućava SaaS servise.
+These domains gain the most value when:
+(1) documents are semi-structured,
+(2) there’s frequent need for precise passages,
+(3) privacy prevents SaaS services.
 
 ## Frontend (React + Vite)
 The project ships with an optional React UI providing live controls (k, min_score, LLM on/off), chunk score previews, keyword coverage, confidence & reason labels, and raw prompt inspection.
