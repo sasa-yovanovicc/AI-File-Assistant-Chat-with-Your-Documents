@@ -84,11 +84,13 @@ def chat(req: ChatRequest,
             old = rp.MIN_SCORE
             rp.MIN_SCORE = min_score
             try:
-                resp = answer_question(q, k=k, use_local_llm=llm)
+                # Pass vector_store explicitly for dependency injection
+                resp = answer_question(q, k=k, use_local_llm=llm, vector_store=store)
             finally:
                 rp.MIN_SCORE = old
         else:
-            resp = answer_question(q, k=k, use_local_llm=llm)
+            # Pass vector_store explicitly for dependency injection  
+            resp = answer_question(q, k=k, use_local_llm=llm, vector_store=store)
         
         logger.info(f"Chat response: confidence={resp.get('confidence', 'unknown')}")
         return resp

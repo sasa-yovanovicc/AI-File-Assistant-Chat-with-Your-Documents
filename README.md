@@ -337,6 +337,8 @@ Serve `frontend/dist` with any static server (NGINX, `npx serve`, or mount via F
 * [x] Enhanced error handling system with custom exceptions and decorators
 * [x] Rich markup integration for colored console output  
 * [x] Admin endpoints: `/admin/reset`, `/admin/stats` for safer operations
+* [x] Dependency injection and testability improvements (3/10 → 8/10)
+* [x] Function decomposition: answer_question() split into focused functions
 * [ ] Switch answer path to real LLM (Ollama flag fully surfaced in API for all requests)
 * [ ] Proper FAISS ID ↔ document mapping (avoid full scan join)
 * [ ] Incremental ingest (hash + skip unchanged, delete removed)

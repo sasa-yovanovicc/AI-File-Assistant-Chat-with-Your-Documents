@@ -145,4 +145,17 @@ class VectorStore:
                 self._load_index()
 
 
+def create_vector_store(db_path: str = None, index_path: str = None, dim: int = None) -> VectorStore:
+    """Factory function for creating VectorStore instances.
+    
+    Useful for dependency injection and testing with custom paths.
+    """
+    return VectorStore(
+        db_path=db_path or DB_PATH,
+        index_path=index_path or FAISS_INDEX_PATH,
+        dim=dim
+    )
+
+
+# Global store instance for backward compatibility
 store = VectorStore()

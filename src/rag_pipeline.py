@@ -193,9 +193,19 @@ def _lexical_rerank(question: str, hits: List[dict]) -> List[dict]:
     return sorted(hits, key=lambda x: x.get('blended', x['score']), reverse=True)
 
 @handle_errors(default_return=[], exception_type=VectorStoreError)
-def retrieve(question: str, k: int = DEFAULT_RETRIEVAL_K):
+def retrieve(question: str, k: int = DEFAULT_RETRIEVAL_K, vector_store=None):
+    """Retrieve relevant document chunks for a question.
+    
+    Args:
+        question: The query to search for
+        k: Number of top chunks to retrieve
+        vector_store: Optional VectorStore instance (for dependency injection, defaults to global store)
+    """
+    # Use dependency injection or fall back to global store
+    current_store = vector_store if vector_store is not None else store
+    
     qv = embed_query(question)
-    hits = store.search(qv, k=max(k, 8))  # pull a few more for reranking
+    hits = current_store.search(qv, k=max(k, 8))  # pull a few more for reranking
     if not hits:
         return []
     hits = _lexical_rerank(question, hits)
@@ -238,7 +248,8 @@ def _build_llm_prompt(question: str, contexts: List[str]) -> str:
     """Build prompt for LLM generation."""
     ctx_joined = "\n\n".join(f"[DOC {i+1}]\n{c}" for i, c in enumerate(contexts[:6]))
     return (
-        "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
+        "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. "
+        "If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
         f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
     )
 
@@ -246,26 +257,56 @@ def _build_llm_prompt(question: str, contexts: List[str]) -> str:
 def _call_openai_llm(prompt: str) -> str:
     """Call OpenAI API for text generation."""
     openai.api_key = OPENAI_API_KEY
+    
+    # Add system message for consistent case-insensitive behavior
+    system_message = {
+        "role": "system", 
+        "content": "You are a helpful assistant that answers questions based only on provided context. Always try to find relevant information in the context regardless of capitalization differences. The questions 'ko je bert' and 'Ko je Bert' should receive equally detailed answers if the information exists in the context."
+    }
+    
+    user_message = {"role": "user", "content": prompt}
+    
     response = openai.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[system_message, user_message],
         max_tokens=OPENAI_MAX_TOKENS,
-        temperature=OPENAI_TEMPERATURE
+        temperature=0.3  # Balance between consistency and creativity
     )
     return response.choices[0].message.content
 
 def _validate_llm_answer(answer: str, question: str) -> bool:
-    """Check if LLM answer contains question keywords."""
+    """Check if LLM answer is valid and useful."""
     if not isinstance(answer, str) or not answer.strip():
         return False
     
     cleaned = _clean_answer(answer)
     low_ans = cleaned.lower()
-    kw_all = set(_keywords(question))
     
-    # If we have keywords, ensure at least one appears in answer
-    if kw_all and not any(kw in low_ans for kw in kw_all):
+    # Check for generic "not enough information" responses
+    generic_responses = [
+        "not enough information",
+        "insufficient information", 
+        "cannot determine",
+        "unclear from the provided",
+        "no specific information"
+    ]
+    
+    # If it's a generic response, reject it - let heuristic handle it
+    if any(generic in low_ans for generic in generic_responses):
         return False
+    
+    # Case-insensitive keyword extraction and matching
+    kw_all = set(kw.lower() for kw in _keywords(question))
+    
+    # If we have keywords, ensure at least one appears in answer (case-insensitive)
+    # But allow answers that make sense even without exact keyword match
+    if kw_all and len(cleaned) > 20:  # Substantive answer 
+        # Allow if answer is substantive even without exact keyword match
+        if len(cleaned) > 50:  # Longer answers are more likely to be useful
+            return True
+        # For shorter answers, require keyword match (case-insensitive)
+        if not any(kw in low_ans for kw in kw_all):
+            return False
     
     return True
 
@@ -325,30 +366,81 @@ def _calculate_keyword_coverage(question: str, contexts: List[str]) -> float:
     default_return={"answer": "Sorry, an error occurred while processing your question.", "confidence": "low", "confidence_reason": "System error", "hits": []}, 
     exception_type=AIFileAssistantError
 )
-def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: bool = True) -> dict:
-    hits = retrieve(question, k=k)
-    contexts = [h['text'] for h in hits]
-    prompt = build_prompt(question, contexts)
-
-    # Calculate keyword coverage
-    coverage = _calculate_keyword_coverage(question, contexts)
-
-    # Determine confidence and reason
+def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: bool = True, vector_store=None) -> dict:
+    """Answer a question using RAG pipeline.
+    
+    Args:
+        question: The question to answer
+        k: Number of top chunks to retrieve
+        use_local_llm: Whether to use local LLM vs heuristic extraction
+        vector_store: Optional VectorStore instance (for dependency injection, defaults to global store)
+    """
+    # Use dependency injection or fall back to global store
+    current_store = vector_store if vector_store is not None else store
+    
+def _evaluate_retrieval_quality(hits: List[dict], coverage: float, question: str) -> tuple[str, str, str]:
+    """Evaluate retrieval quality and determine answer strategy.
+    
+    Returns:
+        tuple: (confidence, reason, strategy) where strategy is 'none', 'extract', or 'generate'
+    """
     confidence, reason = _assess_confidence(hits, coverage, question)
-
+    
     if confidence == "none":
-        answer = "Not enough information in the local documents."
-    else:
-        low_conf = hits[0]['score'] < MIN_SCORE
-        if low_conf:
-            confidence = "low"
-            reason = f"score<{MIN_SCORE:.2f}"  # still try to extract
-        # Build LLM prompt and choose provider
-        answer = _generate_llm_answer(question, contexts, use_local_llm)
+        return confidence, reason, "none"
+    
+    # Check if we have low confidence hits but still try to generate LLM answer
+    # This preserves the original behavior where low scores still get LLM processing
+    if hits and hits[0]['score'] < MIN_SCORE:
+        # Mark as low confidence but still use generate strategy
+        return "low", f"score<{MIN_SCORE:.2f}", "generate"
+    
+    return confidence, reason, "generate"
 
-    # Highlight matched keywords in sources (lightweight UI hint)
+
+def _generate_answer_for_strategy(strategy: str, question: str, contexts: List[str], use_local_llm: bool) -> str:
+    """Generate answer based on determined strategy."""
+    if strategy == "none":
+        return "Not enough information in the local documents."
+    elif strategy == "extract":
+        # Use heuristic extraction for low confidence
+        return extract_answer(question, contexts)
+    else:  # strategy == "generate"
+        return _generate_llm_answer(question, contexts, use_local_llm)
+
+
+@handle_errors(
+    default_return={"answer": "Sorry, an error occurred while processing your question.", "confidence": "low", "confidence_reason": "System error", "hits": []}, 
+    exception_type=AIFileAssistantError
+)
+def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: bool = True, vector_store=None) -> dict:
+    """Answer a question using RAG pipeline.
+    
+    Args:
+        question: The question to answer
+        k: Number of top chunks to retrieve
+        use_local_llm: Whether to use local LLM vs heuristic extraction
+        vector_store: Optional VectorStore instance (for dependency injection, defaults to global store)
+    """
+    # Use dependency injection or fall back to global store
+    current_store = vector_store if vector_store is not None else store
+    
+    # 1. Retrieve relevant chunks
+    hits = retrieve(question, k=k, vector_store=current_store)
+    contexts = [h['text'] for h in hits]
+    
+    # 2. Calculate quality metrics
+    coverage = _calculate_keyword_coverage(question, contexts)
+    confidence, reason, strategy = _evaluate_retrieval_quality(hits, coverage, question)
+    
+    # 3. Generate answer based on strategy
+    answer = _generate_answer_for_strategy(strategy, question, contexts, use_local_llm)
+    
+    # 4. Enhance sources with keyword highlights
     _highlight_keywords(hits, question)
     
+    # 5. Build response
+    prompt = build_prompt(question, contexts)
     return {
         "question": question,
         "answer": answer,
@@ -358,6 +450,7 @@ def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: boo
         "confidence": confidence,
         "reason": reason,
     }
+
 
 def fuzzy_keywords(question: str) -> list[str]:
     # Extract all words longer than 2 characters, ignore stopwords

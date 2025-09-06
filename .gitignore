@@ -3,6 +3,8 @@ __pycache__/
 .env.work.*
 !.env.example
 !.env.openai.example
+debug_*
+test_*
 *.pyc
 .cache/
 vector_store/
