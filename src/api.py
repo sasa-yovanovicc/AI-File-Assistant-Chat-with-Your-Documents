@@ -7,7 +7,7 @@ Endpoints:
   GET  /stats  -> basic store stats
 """
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,8 +15,34 @@ from pydantic import BaseModel
 from .rag_pipeline import answer_question, MIN_SCORE as DEFAULT_MIN_SCORE
 from .vector_store import store
 from .config import API_HOST, API_PORT, FRONTEND_VITE_PORT, FRONTEND_REACT_PORT
+from .exceptions import AIFileAssistantError, VectorStoreError, EmbeddingError, LLMError
+from .error_handler import log_error
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 app = FastAPI(title="AI File Assistant")
+
+# Global exception handler for our custom exceptions
+@app.exception_handler(AIFileAssistantError)
+async def ai_file_assistant_exception_handler(request, exc: AIFileAssistantError):
+    log_error(exc, f"API error in {request.url.path}")
+    
+    # Map exception types to HTTP status codes
+    status_code = 500
+    if isinstance(exc, (EmbeddingError, VectorStoreError)):
+        status_code = 503  # Service Unavailable
+    elif isinstance(exc, LLMError):
+        status_code = 502  # Bad Gateway
+    
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": exc.error_code,
+            "message": exc.message,
+            "details": exc.details
+        }
+    )
 
 app.add_middleware(
   CORSMiddleware,
@@ -41,17 +67,46 @@ def chat(req: ChatRequest,
          k: int = Query(3, ge=1, le=15, description="Retrieval depth (top-k chunks)"),
          min_score: float = Query(None, description="Override minimal similarity score"),
          llm: bool = Query(True, description="Use local LLM via Ollama if available")):
-  q = req.question.strip()
-  if not q:
-    return JSONResponse({"error": "empty question"}, status_code=400)
-  # Allow temporary override of MIN_SCORE without modifying module global
-  if min_score is not None:
-    from . import rag_pipeline as rp  # local import to avoid circular issues
-    old = rp.MIN_SCORE
-    rp.MIN_SCORE = min_score
+    """Answer a question using RAG pipeline with proper error handling."""
+    q = req.question.strip()
+    if not q:
+        return JSONResponse({"error": "empty question"}, status_code=400)
+    
     try:
-      resp = answer_question(q, k=k, use_local_llm=llm)
-    finally:
+        logger.info(f"Chat request: {q[:50]}... (k={k}, llm={llm})")
+        
+        # Allow temporary override of MIN_SCORE without modifying module global
+        if min_score is not None:
+            from . import rag_pipeline as rp  # local import to avoid circular issues
+            old = rp.MIN_SCORE
+            rp.MIN_SCORE = min_score
+            try:
+                resp = answer_question(q, k=k, use_local_llm=llm)
+            finally:
+                rp.MIN_SCORE = old
+        else:
+            resp = answer_question(q, k=k, use_local_llm=llm)
+        
+        logger.info(f"Chat response: confidence={resp.get('confidence', 'unknown')}")
+        return resp
+        
+    except AIFileAssistantError:
+        # These are handled by the global exception handler
+        raise
+    except Exception as e:
+        # Wrap unexpected errors
+        log_error(e, "Unexpected error in chat endpoint", {
+            'question': q,
+            'k': k,
+            'llm': llm
+        })
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "InternalServerError", 
+                "message": "An unexpected error occurred while processing your request"
+            }
+        )
       rp.MIN_SCORE = old
     return resp
   return answer_question(q, k=k, use_local_llm=llm)

@@ -7,6 +7,11 @@ from typing import List, Dict, Tuple
 import numpy as np
 import faiss
 from .config import DB_PATH, FAISS_INDEX_PATH
+from .exceptions import VectorStoreError, ConfigurationError
+from .error_handler import handle_errors, log_error
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 META_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -57,20 +62,36 @@ class VectorStore:
             self.index.add(embeddings)
             faiss.write_index(self.index, self.index_path)
 
+    @handle_errors(default_return=[], exception_type=VectorStoreError)
     def search(self, query_vector: np.ndarray, k: int = 5) -> List[Dict]:
         with self._lock:
             if self.index is None:
+                logger.warning("Search attempted on empty index")
                 return []
+            
             q = query_vector.reshape(1, -1)
             
             # Check dimension compatibility before search
             if q.shape[1] != self.index.d:
-                print(f"ERROR: Query vector dimension ({q.shape[1]}) does not match index dimension ({self.index.d})")
-                print("This usually happens when switching between OpenAI and local embeddings.")
-                print("You need to re-ingest documents with consistent embedding model.")
-                return []
+                error_msg = f"Query vector dimension ({q.shape[1]}) does not match index dimension ({self.index.d})"
+                logger.error(error_msg)
+                raise VectorStoreError(
+                    message=error_msg,
+                    details={
+                        'query_dim': q.shape[1],
+                        'index_dim': self.index.d,
+                        'suggestion': 'Re-ingest documents with consistent embedding model'
+                    }
+                )
             
-            scores, idxs = self.index.search(q, k)
+            try:
+                scores, idxs = self.index.search(q, k)
+                logger.debug(f"Vector search returned {len(idxs[0])} results")
+            except Exception as e:
+                raise VectorStoreError(
+                    message="FAISS search failed",
+                    details={'k': k, 'query_shape': q.shape, 'error': str(e)}
+                ) from e
             cur = self.conn.cursor()
             cur.execute("SELECT id, source, chunk_index, text FROM documents")
             rows = cur.fetchall()

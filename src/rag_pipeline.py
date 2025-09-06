@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List
 import re
+from rich import print
 from .embeddings import embed_query
 from .config import (
     OLLAMA_MODEL, USE_OPENAI, OPENAI_API_KEY, OPENAI_MODEL,
@@ -63,6 +64,22 @@ def _keywords(q: str) -> List[str]:
     tokens = re.findall(r'[A-Za-zÀ-ž0-9]+', q.lower())
     return [t for t in tokens if t not in STOPWORDS and len(t) > MIN_KEYWORD_LENGTH]
 
+def _score_sentence(sentence: str, keywords: List[str]) -> float:
+    """Score a sentence based on keyword hits and coverage."""
+    low = sentence.lower()
+    hits = [k for k in keywords if k in low]
+    if not hits:
+        return 0.0
+    
+    coverage = len(set(hits)) / (len(set(keywords)) or 1)
+    score = len(hits) + LEXICAL_COVERAGE_WEIGHT * coverage
+    
+    # Penalize extremely short sentences
+    if len(sentence) < 30:
+        score -= SHORT_SENTENCE_PENALTY
+    
+    return score
+
 def extract_answer(question: str, contexts: List[str]) -> str:
     """Very small heuristic extractor: choose best scoring sentence among top contexts.
 
@@ -74,66 +91,84 @@ def extract_answer(question: str, contexts: List[str]) -> str:
     kw = _keywords(question)
     if not kw:
         return contexts[0][:350]
+    
     best_sent = None
     best_score = 0.0
+    
     for ctx in contexts[:4]:  # top 4 chunks
-        for s in _sentences(ctx):
-            low = s.lower()
-            hits = [k for k in kw if k in low]
-            if not hits:
-                continue
-            coverage = len(set(hits)) / (len(set(kw)) or 1)
-            score = len(hits) + LEXICAL_COVERAGE_WEIGHT * coverage
-            if len(s) < 30:
-                score -= SHORT_SENTENCE_PENALTY
+        for sentence in _sentences(ctx):
+            score = _score_sentence(sentence, kw)
             if score > best_score:
                 best_score = score
-                best_sent = s
+                best_sent = sentence
+    
     if best_sent and best_score > MIN_ANSWER_SCORE:
         return best_sent[:400]
     return contexts[0][:350]
+
+def _is_definition_question(question: str) -> bool:
+    """Check if question is asking for a definition."""
+    q_lower = question.lower()
+    return q_lower.startswith('ko je ') or q_lower.startswith('who is ')
+
+def _extract_name_variants(names: List[str]) -> set:
+    """Extract name variants for matching."""
+    name_vars = set()
+    for n in names:
+        name_vars.add(n)
+        name_vars.add(_norm(n))
+    return name_vars
+
+def _score_definition_sentence(sentence: str, name_vars: set) -> float:
+    """Score a sentence for definition quality."""
+    low = sentence.lower()
+    norm_low = _norm(sentence.lower())
+    
+    # Must contain definition keywords
+    if ' je ' not in low and ' is ' not in low:
+        return 0.0
+    
+    # Must contain the name being defined
+    hit = any(v.lower() in norm_low for v in name_vars)
+    if not hit:
+        return 0.0
+    
+    # Length constraints
+    length = len(sentence)
+    if length < MIN_DEFINITION_LENGTH or length > MAX_DEFINITION_LENGTH:
+        return 0.0
+    
+    # Score based on position of definition keyword
+    pos = norm_low.find(' je ')
+    if pos == -1:
+        pos = norm_low.find(' is ')
+    
+    score = 1.0
+    if pos != -1:
+        score += max(0, 60 - pos) / 60  # earlier definition slightly better
+    score += sum(1 for v in name_vars if v.lower() in norm_low) * DEFINITION_NAME_WEIGHT
+    
+    return score
 
 def _definitional_extract(question: str, contexts: List[str]) -> str | None:
     names = _proper_names(question)
     if not names:
         return None
-    name_vars = set()
-    for n in names:
-        name_vars.add(n)
-        name_vars.add(_norm(n))
-    q_lower = question.lower()
-    is_def_q = q_lower.startswith('ko je ') or q_lower.startswith('who is ')
-    if not is_def_q:
+    
+    if not _is_definition_question(question):
         return None
+    
+    name_vars = _extract_name_variants(names)
     best = None
     best_score = 0.0
+    
     for ctx in contexts[:6]:
         for sent in _sentences(ctx):
-            low = sent.lower()
-            norm_low = _norm(sent.lower())
-            if ' je ' not in low and ' is ' not in low:
-                continue
-            hit = False
-            for v in name_vars:
-                if v.lower() in norm_low:
-                    hit = True
-                    break
-            if not hit:
-                continue
-            # Score: length penalty + position of ' je '
-            length = len(sent)
-            if length < MIN_DEFINITION_LENGTH or length > MAX_DEFINITION_LENGTH:
-                continue
-            pos = norm_low.find(' je ')
-            if pos == -1:
-                pos = norm_low.find(' is ')
-            score = 1.0
-            if pos != -1:
-                score += max(0, 60 - pos) / 60  # earlier definition slightly better
-            score += sum(1 for v in name_vars if v.lower() in norm_low) * DEFINITION_NAME_WEIGHT
+            score = _score_definition_sentence(sent, name_vars)
             if score > best_score:
                 best_score = score
                 best = sent
+    
     if best:
         return best[:400]
     return None
@@ -196,49 +231,64 @@ def _highlight_keywords(hits: List[dict], question: str) -> None:
             txt = pattern.sub(lambda m: f"**{m.group(0)}**", txt)
         h['preview'] = txt[:220]
 
+def _build_llm_prompt(question: str, contexts: List[str]) -> str:
+    """Build prompt for LLM generation."""
+    ctx_joined = "\n\n".join(f"[DOC {i+1}]\n{c}" for i, c in enumerate(contexts[:6]))
+    return (
+        "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
+        f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
+    )
+
+def _call_openai_llm(prompt: str) -> str:
+    """Call OpenAI API for text generation."""
+    openai.api_key = OPENAI_API_KEY
+    response = openai.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=OPENAI_MAX_TOKENS,
+        temperature=OPENAI_TEMPERATURE
+    )
+    return response.choices[0].message.content
+
+def _validate_llm_answer(answer: str, question: str) -> bool:
+    """Check if LLM answer contains question keywords."""
+    if not isinstance(answer, str) or not answer.strip():
+        return False
+    
+    cleaned = _clean_answer(answer)
+    low_ans = cleaned.lower()
+    kw_all = set(_keywords(question))
+    
+    # If we have keywords, ensure at least one appears in answer
+    if kw_all and not any(kw in low_ans for kw in kw_all):
+        return False
+    
+    return True
+
 def _generate_llm_answer(question: str, contexts: List[str], use_local_llm: bool = True) -> str:
     """Generate answer using LLM (OpenAI or Ollama) or fallback to heuristic extraction."""
     if not use_local_llm:
         return extract_answer(question, contexts)
     
-    ctx_joined = "\n\n".join(f"[DOC {i+1}]\n{c}" for i, c in enumerate(contexts[:6]))
-    prompt = (
-        "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
-        f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
-    )
+    prompt = _build_llm_prompt(question, contexts)
     
     try:
         if USE_OPENAI and OPENAI_API_KEY and openai:
-            # Use OpenAI GPT for completion
-            openai.api_key = OPENAI_API_KEY
-            response = openai.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=OPENAI_MAX_TOKENS,
-                temperature=OPENAI_TEMPERATURE
-            )
-            gen = response.choices[0].message.content
+            generated = _call_openai_llm(prompt)
         elif _ollama_generate is not None:
-            # Fallback to Ollama
-            gen = _ollama_generate(prompt, model=OLLAMA_MODEL, stream=False)
+            generated = _ollama_generate(prompt, model=OLLAMA_MODEL, stream=False)
         else:
             # No LLM available, use heuristic
             return extract_answer(question, contexts)
         
-        if isinstance(gen, str) and gen.strip():
-            # Optional post-LLM guard: if LLM answer contains none of the keywords, fallback
-            cleaned = _clean_answer(gen)
-            low_ans = cleaned.lower()
-            kw_all = set(_keywords(question))
-            if kw_all and not any(kw in low_ans for kw in kw_all):
-                return extract_answer(question, contexts)
-            else:
-                return cleaned
+        if _validate_llm_answer(generated, question):
+            return _clean_answer(generated)
         else:
             return extract_answer(question, contexts)
+            
     except Exception as e:
         # Fallback to heuristic if LLM fails
-        print(f"LLM error: {e}")  # for debugging
+        print(f"[red]LLM error:[/] {e}")  # for debugging
         return extract_answer(question, contexts)
 
 def _assess_confidence(hits: List[dict], coverage: float, question: str) -> tuple[str, str]:
