@@ -36,15 +36,13 @@ class FaissVectorStore(VectorRepository):
     def _ensure_meta(self) -> None:
         """Ensure metadata table exists."""
         cur = self.conn.cursor()
+        # Use existing documents table structure for compatibility
         cur.execute('''
-            CREATE TABLE IF NOT EXISTS chunks (
+            CREATE TABLE IF NOT EXISTS documents (
                 id TEXT PRIMARY KEY,
-                document_id TEXT,
-                content TEXT,
+                source TEXT,
                 chunk_index INTEGER,
-                start_position INTEGER,
-                end_position INTEGER,
-                metadata TEXT
+                text TEXT
             );
         ''')
         self.conn.commit()
@@ -72,21 +70,20 @@ class FaissVectorStore(VectorRepository):
                     details={'expected': self.dim, 'got': embeddings.shape[1]}
                 )
             
-            # Store metadata
+            # Store in documents table for compatibility
             cur = self.conn.cursor()
             for chunk in chunks:
+                # Use chunk.metadata.get("source") or derive from document_id
+                source = chunk.metadata.get("source", chunk.document_id)
                 cur.execute('''
-                    INSERT OR REPLACE INTO chunks 
-                    (id, document_id, content, chunk_index, start_position, end_position, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO documents 
+                    (id, source, chunk_index, text)
+                    VALUES (?, ?, ?, ?)
                 ''', (
                     chunk.id,
-                    chunk.document_id, 
-                    chunk.content,
+                    source, 
                     chunk.chunk_index,
-                    chunk.start_position,
-                    chunk.end_position,
-                    str(chunk.metadata)  # Simple serialization
+                    chunk.content
                 ))
             
             self.conn.commit()
@@ -113,7 +110,7 @@ class FaissVectorStore(VectorRepository):
             # FAISS search
             scores, indices = self.index.search(q, k)
             
-            # Get metadata from legacy documents table for compatibility
+            # Get metadata from documents table
             cur = self.conn.cursor()
             cur.execute('SELECT id, source, chunk_index, text FROM documents')
             rows = cur.fetchall()
@@ -125,15 +122,15 @@ class FaissVectorStore(VectorRepository):
                 
                 row = rows[idx]
                 
-                # Create Chunk from legacy documents table
+                # Create Chunk from documents table with source in metadata
                 chunk = Chunk(
                     id=row[0],
-                    document_id=row[1],  # source as document_id
+                    document_id=row[1],  # source as document_id for compatibility
                     content=row[3],      # text as content
                     chunk_index=row[2],
                     start_position=0,    # Default value
                     end_position=len(row[3]),  # Text length
-                    metadata={}  # Empty for now
+                    metadata={"source": row[1]}  # Add source to metadata
                 )
                 
                 result = SearchResult(
@@ -149,7 +146,7 @@ class FaissVectorStore(VectorRepository):
         """Get total number of chunks in the store."""
         with self._lock:
             cur = self.conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM chunks")
+            cur.execute("SELECT COUNT(*) FROM documents")
             return cur.fetchone()[0]
     
     def reset(self) -> None:
@@ -157,7 +154,7 @@ class FaissVectorStore(VectorRepository):
         with self._lock:
             # Clear database
             cur = self.conn.cursor()
-            cur.execute("DELETE FROM chunks")
+            cur.execute("DELETE FROM documents")
             self.conn.commit()
             
             # Clear FAISS index

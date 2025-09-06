@@ -48,16 +48,16 @@ class ChatUseCase:
     def _to_api_response(self, result: QueryResult, query_text: str) -> Dict[str, Any]:
         """Convert QueryResult to API response format."""
         return {
-            "query_text": query_text,
+            "question": query_text,  # Use "question" for API compatibility
             "answer": result.answer,
             "confidence": result.confidence.value,
             "sources": [
                 {
-                    "source": getattr(chunk, 'metadata', {}).get("source", "unknown"),
-                    "chunk_index": getattr(chunk, 'chunk_index', 0),
-                    "content": getattr(chunk, 'content', '')[:200] + "..." if len(getattr(chunk, 'content', '')) > 200 else getattr(chunk, 'content', ''),
-                    "score": getattr(chunk, 'metadata', {}).get("score", 0.0)
+                    "source": search_result.chunk.metadata.get("source", "unknown"),
+                    "chunk_index": search_result.chunk.chunk_index,
+                    "preview": search_result.chunk.content[:200] + "..." if len(search_result.chunk.content) > 200 else search_result.chunk.content,
+                    "score": search_result.score
                 }
-                for chunk in result.search_results
+                for search_result in result.search_results
             ]
         }
