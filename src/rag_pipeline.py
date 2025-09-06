@@ -11,6 +11,8 @@ from .config import (
     DEFINITION_NAME_WEIGHT, MIN_KEYWORD_LENGTH, MAX_ANSWER_LENGTH,
     DEFAULT_RETRIEVAL_K, DEFAULT_ANSWER_K, OPENAI_TEMPERATURE, OPENAI_MAX_TOKENS
 )
+from .error_handler import handle_errors
+from .exceptions import LLMError, AIFileAssistantError, VectorStoreError
 try:  # local LLM optional
     from .llm_local import generate_answer as _ollama_generate
 except Exception:  # pragma: no cover
@@ -190,6 +192,7 @@ def _lexical_rerank(question: str, hits: List[dict]) -> List[dict]:
         h['blended'] = h['score'] + LEXICAL_RERANK_WEIGHT * overlap
     return sorted(hits, key=lambda x: x.get('blended', x['score']), reverse=True)
 
+@handle_errors(default_return=[], exception_type=VectorStoreError)
 def retrieve(question: str, k: int = DEFAULT_RETRIEVAL_K):
     qv = embed_query(question)
     hits = store.search(qv, k=max(k, 8))  # pull a few more for reranking
@@ -239,6 +242,7 @@ def _build_llm_prompt(question: str, contexts: List[str]) -> str:
         f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
     )
 
+@handle_errors(default_return="", exception_type=LLMError)
 def _call_openai_llm(prompt: str) -> str:
     """Call OpenAI API for text generation."""
     openai.api_key = OPENAI_API_KEY
@@ -265,6 +269,7 @@ def _validate_llm_answer(answer: str, question: str) -> bool:
     
     return True
 
+@handle_errors(default_return="", exception_type=LLMError)
 def _generate_llm_answer(question: str, contexts: List[str], use_local_llm: bool = True) -> str:
     """Generate answer using LLM (OpenAI or Ollama) or fallback to heuristic extraction."""
     if not use_local_llm:
@@ -316,6 +321,10 @@ def _calculate_keyword_coverage(question: str, contexts: List[str]) -> float:
     present = {kw for kw in kw_all if kw in concat_low}
     return len(present) / len(kw_all)
 
+@handle_errors(
+    default_return={"answer": "Sorry, an error occurred while processing your question.", "confidence": "low", "confidence_reason": "System error", "hits": []}, 
+    exception_type=AIFileAssistantError
+)
 def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: bool = True) -> dict:
     hits = retrieve(question, k=k)
     contexts = [h['text'] for h in hits]

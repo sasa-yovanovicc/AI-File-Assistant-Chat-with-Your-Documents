@@ -13,8 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .rag_pipeline import answer_question, MIN_SCORE as DEFAULT_MIN_SCORE
+from .config import (
+    API_HOST, API_PORT, FRONTEND_VITE_PORT, FRONTEND_REACT_PORT,
+    CHUNK_SIZE, CHUNK_OVERLAP, USE_OPENAI, DEFAULT_RETRIEVAL_K
+)
 from .vector_store import store
-from .config import API_HOST, API_PORT, FRONTEND_VITE_PORT, FRONTEND_REACT_PORT
 from .exceptions import AIFileAssistantError, VectorStoreError, EmbeddingError, LLMError
 from .error_handler import log_error
 from .logging_config import get_logger
@@ -107,9 +110,6 @@ def chat(req: ChatRequest,
                 "message": "An unexpected error occurred while processing your request"
             }
         )
-      rp.MIN_SCORE = old
-    return resp
-  return answer_question(q, k=k, use_local_llm=llm)
 
 
 @app.get("/health")
@@ -134,11 +134,66 @@ def refresh_index():
   return {"status": "reloaded", "index_size": store.index_size()}
 
 
+@app.post("/admin/reset")
+def reset_vector_store():
+    """Reset/clear the vector store and metadata."""
+    try:
+        store.reset()
+        return {
+            "status": "success", 
+            "message": "Vector store reset successfully",
+            "index_size": store.count()
+        }
+    except Exception as e:
+        from .exceptions import AIFileAssistantError
+        raise AIFileAssistantError(
+            message=f"Failed to reset vector store: {str(e)}",
+            details={"operation": "reset", "error": str(e)}
+        )
+
+
+@app.get("/admin/stats")
+def get_admin_stats():
+    """Get detailed admin statistics."""
+    try:
+        # Get metadata count
+        metadata_count = "N/A"
+        try:
+            with store.conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM documents")
+                metadata_count = cur.fetchone()[0]
+        except Exception:
+            pass
+            
+        return {
+            "vector_store": {
+                "total_chunks": store.count(),
+                "index_size": store.index_size(),
+                "has_index": store.index is not None
+            },
+            "metadata": {
+                "total_documents": metadata_count
+            },
+            "configuration": {
+                "chunk_size": CHUNK_SIZE,
+                "chunk_overlap": CHUNK_OVERLAP,
+                "embedding_model": "OpenAI" if USE_OPENAI else "sentence-transformers",
+                "retrieval_k": DEFAULT_RETRIEVAL_K
+            }
+        }
+    except Exception as e:
+        from .exceptions import AIFileAssistantError
+        raise AIFileAssistantError(
+            message=f"Failed to get admin stats: {str(e)}",
+            details={"operation": "admin_stats", "error": str(e)}
+        )
+
+
 @app.get("/")
 def root():
   return {
     "name": "AI File Assistant API",
-    "endpoints": ["POST /chat", "GET /stats", "GET /health"],
+    "endpoints": ["POST /chat", "GET /stats", "GET /health", "POST /admin/refresh", "POST /admin/reset", "GET /admin/stats"],
   "frontend": "React dev server runs separately (see frontend folder).",
   "notes": "Use POST /admin/refresh after ingest from another process to load FAISS index."
   }

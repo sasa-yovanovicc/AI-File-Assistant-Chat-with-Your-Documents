@@ -13,6 +13,8 @@ from .config import CHUNK_SIZE, CHUNK_OVERLAP
 from .chunking import chunk_text, build_docs
 from .embeddings import embed_texts
 from .vector_store import store
+from .error_handler import handle_errors
+from .exceptions import DocumentProcessingError, AIFileAssistantError
 
 import PyPDF2
 import docx  # python-docx
@@ -30,6 +32,7 @@ def sniff_is_pdf(path: str) -> bool:
         return False
 
 
+@handle_errors(default_return="", exception_type=DocumentProcessingError)
 def _read_pdf_file(path: str) -> str:
     """Extract text from PDF file."""
     text_parts: list[str] = []
@@ -47,6 +50,7 @@ def _read_pdf_file(path: str) -> str:
                 text_parts.append("")
     return "\n".join(text_parts)
 
+@handle_errors(default_return="", exception_type=DocumentProcessingError)
 def _read_text_file(path: str, max_bytes: int | None = None) -> str:
     """Read plain text file with size limit."""
     if max_bytes is not None and os.path.getsize(path) > max_bytes:
@@ -54,11 +58,13 @@ def _read_text_file(path: str, max_bytes: int | None = None) -> str:
     with open(path, 'r', encoding='utf-8', errors='ignore') as f:
         return f.read()
 
+@handle_errors(default_return="", exception_type=DocumentProcessingError)
 def _read_docx_file(path: str) -> str:
     """Extract text from DOCX file."""
     d = docx.Document(path)
     return "\n".join(p.text for p in d.paragraphs)
 
+@handle_errors(default_return="", exception_type=DocumentProcessingError)
 def read_file(path: str, force_text: bool = False, max_bytes: int | None = None) -> str:
     """Return extracted text or empty string if unsupported/empty.
 
@@ -106,6 +112,7 @@ def gather_files(root: str, include_ext: List[str], only_ext: List[str] | None =
     return all_files
 
 
+@handle_errors(default_return=[], exception_type=DocumentProcessingError)
 def process_file(path: str, force_text: bool, max_bytes: int | None):
     text = read_file(path, force_text=force_text, max_bytes=max_bytes)
     if not text.strip():

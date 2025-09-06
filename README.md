@@ -121,6 +121,27 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat -Body (@{question
 
 Copy `.env.example` to `.env` and fill in what you need.
 
+## Admin endpoints
+The API includes several admin endpoints for maintenance operations:
+
+| Endpoint | Method | Description | Usage |
+|----------|--------|-------------|--------|
+| `/admin/stats` | GET | Get detailed system statistics including vector store metrics and configuration | Monitor system health |
+| `/admin/reset` | POST | Clear/reset the vector store and all metadata | Start fresh with new documents |
+| `/admin/refresh` | POST | Reload FAISS index after ingestion from another process | Sync after external ingest |
+
+Example usage:
+```powershell
+# Get system statistics
+Invoke-RestMethod -Uri http://127.0.0.1:8000/admin/stats
+
+# Reset vector store (use with caution!)
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/admin/reset
+
+# Refresh index after external ingestion
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/admin/refresh
+```
+
 ## Getting API keys / accounts
 1. OpenAI (optional):
 	* Sign up: https://platform.openai.com/
@@ -313,13 +334,15 @@ Serve `frontend/dist` with any static server (NGINX, `npx serve`, or mount via F
 
 
 ## Roadmap / TODO (updated)
+* [x] Enhanced error handling system with custom exceptions and decorators
+* [x] Rich markup integration for colored console output  
+* [x] Admin endpoints: `/admin/reset`, `/admin/stats` for safer operations
 * [ ] Switch answer path to real LLM (Ollama flag fully surfaced in API for all requests)
 * [ ] Proper FAISS ID ↔ document mapping (avoid full scan join)
 * [ ] Incremental ingest (hash + skip unchanged, delete removed)
 * [ ] OCR pipeline for scanned PDFs (Tesseract or PaddleOCR integration)
 * [ ] Cross-encoder reranker option for higher precision
 * [x] Frontend: highlight snippet previews + score + confidence metadata
-* [ ] Admin endpoints: `/admin/reset`, `/admin/reindex` safer operations
 * [ ] Support legacy .doc via optional dependency (antiword) when present
 * [ ] Dockerfile + compose (API + frontend)
 * [ ] Evaluation script (gold QA pairs, MRR / Recall metrics)
