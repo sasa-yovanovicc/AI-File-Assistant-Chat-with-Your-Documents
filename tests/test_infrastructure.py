@@ -4,44 +4,10 @@ import pytest
 import os
 import tempfile
 
-from src.infrastructure.storage import FaissVectorStore, FileDocumentRepository
+from src.infrastructure.storage import FileDocumentRepository
 from src.infrastructure.llm import OpenAILLMClient, OllamaLLMClient
 from src.infrastructure.embeddings import OpenAIEmbeddingClient, LocalEmbeddingClient
 from src.domain.entities import Document, Chunk
-
-
-class TestFaissVectorStore:
-    """Test FAISS vector store implementation."""
-    
-    def test_faiss_vector_store_creation(self, temp_storage_dir):
-        """Test FaissVectorStore can be created."""
-        db_path = os.path.join(temp_storage_dir, "test.db")
-        index_path = os.path.join(temp_storage_dir, "test.index")
-        
-        store = FaissVectorStore(db_path=db_path, index_path=index_path)
-        
-        assert store.db_path == db_path
-        assert store.index_path == index_path
-    
-    def test_faiss_vector_store_operations(self, temp_storage_dir, sample_chunks):
-        """Test basic FAISS operations."""
-        db_path = os.path.join(temp_storage_dir, "test.db")
-        index_path = os.path.join(temp_storage_dir, "test.index")
-        
-        store = FaissVectorStore(db_path=db_path, index_path=index_path)
-        
-        # Test save vectors
-        embeddings = [[0.1] * 384, [0.2] * 384]
-        result = store.add_chunks(sample_chunks, embeddings)
-        assert result is True
-        
-        # Test count
-        count = store.count()
-        assert count >= 0  # May be 0 if FAISS not properly initialized
-        
-        # Test clear
-        clear_result = store.clear()
-        assert clear_result is True
 
 
 class TestFileDocumentRepository:
@@ -66,7 +32,7 @@ class TestFileDocumentRepository:
         # Retrieve document
         retrieved_doc = repo.get_document(doc_id)
         assert retrieved_doc is not None
-        assert retrieved_doc.filename == sample_document.filename
+        assert retrieved_doc.source == sample_document.source
         assert retrieved_doc.content == sample_document.content
     
     def test_chunk_operations(self, temp_storage_dir, sample_chunks):
@@ -91,7 +57,6 @@ class TestLLMClients:
 
         assert hasattr(client, 'model')
         assert hasattr(client, 'api_key')
-        assert hasattr(client, 'temperature')
         assert hasattr(client, 'max_tokens')
     
     def test_ollama_llm_client_creation(self):

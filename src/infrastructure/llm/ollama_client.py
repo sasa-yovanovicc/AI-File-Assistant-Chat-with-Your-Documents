@@ -133,3 +133,11 @@ class OllamaLLMClient(LLMRepository):
                 "available": False,
                 "error": str(e)
             }
+    
+    def is_available(self) -> bool:
+        """Check if Ollama LLM is available."""
+        return self._check_connection()
+    
+    def generate_answer(self, prompt: str, **kwargs) -> str:
+        """Generate an answer using Ollama - alias for generate_response."""
+        return self.generate_response(prompt, **kwargs)
