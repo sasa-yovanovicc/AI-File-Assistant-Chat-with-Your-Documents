@@ -5,8 +5,10 @@ load_dotenv()
 
 # Basic settings
 DATA_DIR = os.path.abspath(os.getenv("DATA_DIR", "data"))
-DB_PATH = os.path.join(DATA_DIR, "vectors.db")
-FAISS_INDEX_PATH = os.path.join(DATA_DIR, "faiss.index")
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+# Updated paths to use uploads directory for centralized storage
+DB_PATH = os.path.join(UPLOADS_DIR, "vector_db", "vectors.db")
+FAISS_INDEX_PATH = os.path.join(UPLOADS_DIR, "faiss", "faiss.index")
 # Multilingual default model (covers >50 languages). Users can override in .env
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
@@ -58,3 +60,9 @@ FRONTEND_VITE_PORT = int(os.getenv("FRONTEND_VITE_PORT", "5173"))
 FRONTEND_REACT_PORT = int(os.getenv("FRONTEND_REACT_PORT", "3000"))
 
 os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+# Create subdirectories for centralized storage
+os.makedirs(os.path.join(UPLOADS_DIR, "vector_db"), exist_ok=True)
+os.makedirs(os.path.join(UPLOADS_DIR, "faiss"), exist_ok=True)
+os.makedirs(os.path.join(UPLOADS_DIR, "documents"), exist_ok=True)
+os.makedirs(os.path.join(UPLOADS_DIR, "logs"), exist_ok=True)

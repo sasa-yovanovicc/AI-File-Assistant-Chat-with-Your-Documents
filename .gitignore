@@ -1,22 +1,162 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environment variables
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.work.*
 !.env.example
 !.env.openai.example
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env3/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.metadata
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.tmp
+*.temp
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Application specific
 debug_*
-test_*
 analyze_*
-*.pyc
-.cache/
 vector_store/
 .embeddings_cache/
 .openai_cache/
 *.db
-.DS_Store
-.venv/
+*.sqlite
+*.sqlite3
 data/
-.git/
 pvt/
+
+# Utility folders - keep organized test and migration scripts
+util/
+util/test/
+util/migration/
+
+# Node.js (for frontend)
 frontend/node_modules/
 frontend/dist/
 frontend/.parcel-cache/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.cache/
+frontend/.temp/
+
+# Python specific
+*.pyc
+.cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Security
+*.pem
+*.key
+config.json
+secrets.json
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/

@@ -52,9 +52,13 @@ class SearchResult:
     chunk: Chunk
     score: float
     rank: int
+    blended_score: float = None  # Optional reranked score
     
     def __post_init__(self) -> None:
         if not 0 <= self.score <= 1:
             raise ValueError("Score must be between 0 and 1")
         if self.rank < 0:
             raise ValueError("Rank must be non-negative")
+        # Set blended_score to score if not provided
+        if self.blended_score is None:
+            self.blended_score = self.score

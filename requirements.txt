@@ -8,6 +8,10 @@ faiss-cpu
 PyPDF2
 python-docx
 tqdm
+sqlite3
+httpx
+pytest
+pytest-asyncio
 numpy
 sqlalchemy
 rich

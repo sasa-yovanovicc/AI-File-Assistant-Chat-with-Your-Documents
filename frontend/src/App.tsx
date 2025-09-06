@@ -3,6 +3,17 @@ import React, { useState } from 'react';
 interface ChatResponseSource { source: string; chunk_index: number; score?: number; preview?: string }
 interface ChatResponse { question: string; answer: string; sources: ChatResponseSource[]; prompt_preview?: string; kw_coverage?: number; confidence?: string; reason?: string }
 
+// v2 API types
+interface V2ChatResponse { 
+  query: { text: string; max_results: number };
+  result: {
+    answer: string;
+    confidence: { level: string; description: string };
+    sources: ChatResponseSource[];
+    metadata: { architecture: string };
+  };
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export default function App() {
@@ -13,6 +24,7 @@ export default function App() {
   const [k, setK] = useState(3);
   const [minScore, setMinScore] = useState<string>('');
   const [useLLM, setUseLLM] = useState(true);
+  const [useCleanArch, setUseCleanArch] = useState(true);
   const [showPrompt, setShowPrompt] = useState(false);
 
   async function submit(e?: React.FormEvent) {
@@ -25,7 +37,18 @@ export default function App() {
   params.set('k', String(k));
   params.set('llm', String(useLLM));
   if(minScore.trim()) params.set('min_score', minScore.trim());
-  const r = await fetch(`${API_BASE}/chat?${params.toString()}`, {
+  
+  // Choose endpoint based on architecture
+  const endpoint = useCleanArch ? '/v2/chat' : '/chat';
+  if(!useCleanArch) {
+    params.set('use_clean_arch', 'false');
+  }
+  
+  const url = useCleanArch 
+    ? `${API_BASE}${endpoint}?k=${k}`
+    : `${API_BASE}${endpoint}?${params.toString()}`;
+  
+  const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q })
@@ -33,8 +56,21 @@ export default function App() {
       if(!r.ok) {
         setError('Error '+r.status);
       } else {
-        const data: ChatResponse = await r.json();
-        setResp(data);
+        const data = await r.json();
+        // Handle both legacy and v2 response formats
+        if (useCleanArch && data.result) {
+          // v2 API format
+          const v2Data = data as V2ChatResponse;
+          setResp({
+            question: v2Data.query?.text || q,
+            answer: v2Data.result.answer,
+            sources: v2Data.result.sources || [],
+            confidence: v2Data.result.confidence?.level
+          });
+        } else {
+          // Legacy format
+          setResp(data as ChatResponse);
+        }
       }
     } catch(err: any) {
       setError(err.message || String(err));
@@ -55,6 +91,9 @@ export default function App() {
           </label>
           <label style={{display:'flex', alignItems:'center', gap:4, fontSize:12}} title="Use AI (OpenAI/Ollama) for generative answers vs simple text extraction">LLM
             <input type="checkbox" checked={useLLM} onChange={e=>setUseLLM(e.target.checked)} />
+          </label>
+          <label style={{display:'flex', alignItems:'center', gap:4, fontSize:12}} title="Use Clean Architecture (recommended)">Clean Arch
+            <input type="checkbox" checked={useCleanArch} onChange={e=>setUseCleanArch(e.target.checked)} />
           </label>
           <label style={{display:'flex', alignItems:'center', gap:4, fontSize:12}}>Show prompt
             <input type="checkbox" checked={showPrompt} onChange={e=>setShowPrompt(e.target.checked)} />

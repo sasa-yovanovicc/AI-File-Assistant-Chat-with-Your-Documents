@@ -28,6 +28,11 @@ class DocumentProcessingError(AIFileAssistantError):
     pass
 
 
+class DocumentError(AIFileAssistantError):
+    """Raised when document storage operations fail."""
+    pass
+
+
 class LLMError(AIFileAssistantError):
     """Raised when LLM operations fail."""
     pass

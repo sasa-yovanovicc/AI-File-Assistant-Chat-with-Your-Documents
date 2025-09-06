@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .config import DATA_DIR
+from .config import DATA_DIR, UPLOADS_DIR
 
 
 def setup_logging(
@@ -19,8 +19,8 @@ def setup_logging(
 ) -> None:
     """Setup application logging with file rotation and console output."""
     
-    # Create logs directory
-    log_dir = Path(DATA_DIR) / "logs"
+    # Create logs directory in uploads folder
+    log_dir = Path(UPLOADS_DIR) / "logs"
     log_dir.mkdir(exist_ok=True)
     
     # Configure root logger

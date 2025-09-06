@@ -29,27 +29,3 @@ class VectorRepository(ABC):
     def reset(self) -> None:
         """Clear all data from the vector store."""
         pass
-
-
-class DocumentRepository(ABC):
-    """Abstract interface for document metadata operations."""
-    
-    @abstractmethod
-    def save_document(self, document: Document) -> None:
-        """Save document metadata."""
-        pass
-    
-    @abstractmethod
-    def get_document(self, document_id: str) -> Optional[Document]:
-        """Get document by ID."""
-        pass
-    
-    @abstractmethod
-    def list_documents(self) -> List[Document]:
-        """List all documents."""
-        pass
-    
-    @abstractmethod
-    def delete_document(self, document_id: str) -> None:
-        """Delete document and its chunks."""
-        pass
