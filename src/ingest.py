@@ -1,11 +1,11 @@
 from __future__ import annotations
 import argparse
 import os
-from typing import List
+from typing import List, Any
 try:
     from tqdm import tqdm
 except ImportError:  # graceful fallback if dependency not installed
-    def tqdm(it, **kwargs):  # type: ignore
+    def tqdm(it, **kwargs) -> Any:  # type: ignore
         return it
     print("[yellow]tqdm not installed – install with 'pip install tqdm' for progress bars.[/]")
 from rich import print
@@ -113,7 +113,7 @@ def gather_files(root: str, include_ext: List[str], only_ext: List[str] | None =
 
 
 @handle_errors(default_return=[], exception_type=DocumentProcessingError)
-def process_file(path: str, force_text: bool, max_bytes: int | None):
+def process_file(path: str, force_text: bool, max_bytes: int | None) -> dict:
     text = read_file(path, force_text=force_text, max_bytes=max_bytes)
     if not text.strip():
         return []
@@ -187,14 +187,14 @@ def _process_files_batch(files: List[str], args) -> List[dict]:
     print(f"[green]Summary:[/] processed={counters['files']} accepted_files={counters['accepted']} empty/too_small={counters['empty']} errors={counters['errored']} total_chunks={counters['chunks']}")
     return all_docs
 
-def _embed_and_store_documents(all_docs: List[dict], batch_size: int):
+def _embed_and_store_documents(all_docs: List[dict], batch_size: int) -> None:
     """Generate embeddings and store documents in vector store."""
     for i in tqdm(range(0, len(all_docs), batch_size), desc="Embeddings"):
         batch_docs = all_docs[i:i+batch_size]
         vectors = embed_texts([d['text'] for d in batch_docs])
         store.add(batch_docs, vectors)
 
-def main():
+def main() -> None:
     args = _parse_arguments()
 
     if args.reset:

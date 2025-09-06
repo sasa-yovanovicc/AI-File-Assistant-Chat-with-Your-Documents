@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS documents (
 """
 
 class VectorStore:
-    def __init__(self, db_path: str = DB_PATH, index_path: str = FAISS_INDEX_PATH, dim: int | None = None):
+    def __init__(self, db_path: str = DB_PATH, index_path: str = FAISS_INDEX_PATH, dim: int | None = None) -> None:
         self.db_path = db_path
         self.index_path = index_path
         # Thread-safe SQLite connection (allow use across threads)
@@ -35,20 +35,20 @@ class VectorStore:
         if os.path.exists(self.index_path):
             self._load_index()
 
-    def _ensure_meta(self):
+    def _ensure_meta(self) -> None:
         cur = self.conn.cursor()
         cur.execute(META_TABLE_SQL)
         self.conn.commit()
 
-    def _load_index(self):
+    def _load_index(self) -> None:
         self.index = faiss.read_index(self.index_path)
         self.dim = self.index.d
 
-    def _create_index(self, dim: int):
+    def _create_index(self, dim: int) -> None:
         self.index = faiss.IndexFlatIP(dim)  # cosine if normalized
         self.dim = dim
 
-    def add(self, docs: List[Dict], embeddings: np.ndarray):
+    def add(self, docs: List[Dict], embeddings: np.ndarray) -> None:
         with self._lock:
             if self.index is None:
                 self._create_index(embeddings.shape[1])
@@ -115,7 +115,7 @@ class VectorStore:
                 return 0
             return self.index.ntotal
 
-    def reset(self):
+    def reset(self) -> None:
         """Completely reset the store: delete DB + FAISS index and recreate empty structures."""
         with self._lock:
             try:
@@ -138,7 +138,7 @@ class VectorStore:
             self.index = None
             self.dim = None
 
-    def refresh(self):
+    def refresh(self) -> None:
         """Reload FAISS index from disk (use after external ingest process)."""
         with self._lock:
             if os.path.exists(self.index_path):

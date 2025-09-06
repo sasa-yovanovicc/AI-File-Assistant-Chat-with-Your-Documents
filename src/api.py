@@ -7,6 +7,7 @@ Endpoints:
   GET  /stats  -> basic store stats
 """
 
+from typing import Dict, Any
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,7 +70,7 @@ class ChatRequest(BaseModel):
 def chat(req: ChatRequest,
          k: int = Query(3, ge=1, le=15, description="Retrieval depth (top-k chunks)"),
          min_score: float = Query(None, description="Override minimal similarity score"),
-         llm: bool = Query(True, description="Use local LLM via Ollama if available")):
+         llm: bool = Query(True, description="Use local LLM via Ollama if available")) -> Dict[str, Any]:
     """Answer a question using RAG pipeline with proper error handling."""
     q = req.question.strip()
     if not q:
@@ -115,12 +116,12 @@ def chat(req: ChatRequest,
 
 
 @app.get("/health")
-def health():
+def health() -> Dict[str, str]:
   return {"status": "ok"}
 
 
 @app.get("/stats")
-def stats():
+def stats() -> Dict[str, Any]:
   try:
     doc_count = store.count()
     index_size = store.index_size()
@@ -131,13 +132,13 @@ def stats():
 
 
 @app.post("/admin/refresh")
-def refresh_index():
+def refresh_index() -> Dict[str, Any]:
   store.refresh()
   return {"status": "reloaded", "index_size": store.index_size()}
 
 
 @app.post("/admin/reset")
-def reset_vector_store():
+def reset_vector_store() -> Dict[str, Any]:
     """Reset/clear the vector store and metadata."""
     try:
         store.reset()
@@ -155,7 +156,7 @@ def reset_vector_store():
 
 
 @app.get("/admin/stats")
-def get_admin_stats():
+def get_admin_stats() -> Dict[str, Any]:
     """Get detailed admin statistics."""
     try:
         # Get metadata count
@@ -192,7 +193,7 @@ def get_admin_stats():
 
 
 @app.get("/")
-def root():
+def root() -> Dict[str, Any]:
   return {
     "name": "AI File Assistant API",
     "endpoints": ["POST /chat", "GET /stats", "GET /health", "POST /admin/refresh", "POST /admin/reset", "GET /admin/stats"],

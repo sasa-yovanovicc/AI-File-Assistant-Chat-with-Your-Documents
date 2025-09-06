@@ -193,7 +193,7 @@ def _lexical_rerank(question: str, hits: List[dict]) -> List[dict]:
     return sorted(hits, key=lambda x: x.get('blended', x['score']), reverse=True)
 
 @handle_errors(default_return=[], exception_type=VectorStoreError)
-def retrieve(question: str, k: int = DEFAULT_RETRIEVAL_K, vector_store=None):
+def retrieve(question: str, k: int = DEFAULT_RETRIEVAL_K, vector_store=None) -> List[dict]:
     """Retrieve relevant document chunks for a question.
     
     Args:
@@ -458,7 +458,7 @@ def fuzzy_keywords(question: str) -> list[str]:
     # Normalize diacritics
     return [_norm(t) for t in tokens]
 
-def extract_relevant_chunks(chunks, question, threshold=80):
+def extract_relevant_chunks(chunks, question, threshold=80) -> List[dict]:
     # Fuzzy match: use rapidfuzz for comparing keywords with chunk text
     keywords = fuzzy_keywords(question)
     hits = []

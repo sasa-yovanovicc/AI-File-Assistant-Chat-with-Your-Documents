@@ -5,6 +5,7 @@ __pycache__/
 !.env.openai.example
 debug_*
 test_*
+analyze_*
 *.pyc
 .cache/
 vector_store/
