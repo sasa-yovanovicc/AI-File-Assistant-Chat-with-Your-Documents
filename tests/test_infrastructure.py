@@ -32,7 +32,7 @@ class TestFaissVectorStore:
         
         # Test save vectors
         embeddings = [[0.1] * 384, [0.2] * 384]
-        result = store.save_vectors(sample_chunks, embeddings)
+        result = store.add_chunks(sample_chunks, embeddings)
         assert result is True
         
         # Test count
@@ -88,8 +88,9 @@ class TestLLMClients:
     def test_openai_llm_client_creation(self):
         """Test OpenAI LLM client creation."""
         client = OpenAILLMClient()
-        
-        assert hasattr(client, 'model_name')
+
+        assert hasattr(client, 'model')
+        assert hasattr(client, 'api_key')
         assert hasattr(client, 'temperature')
         assert hasattr(client, 'max_tokens')
     
@@ -97,21 +98,18 @@ class TestLLMClients:
         """Test Ollama LLM client creation."""
         client = OllamaLLMClient()
         
-        assert hasattr(client, 'base_url')
         assert hasattr(client, 'model_name')
-        assert hasattr(client, 'api_url')
+        assert hasattr(client, 'base_url')
     
     @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="No OpenAI API key")
     def test_openai_llm_response(self):
         """Test OpenAI LLM response generation (if API key available)."""
         client = OpenAILLMClient()
-        
-        response = client.generate_response("Hello, this is a test.", max_tokens=10)
+
+        response = client.generate_answer("Hello, this is a test.", max_tokens=10)
         
         assert isinstance(response, str)
         assert len(response) > 0
-
-
 class TestEmbeddingClients:
     """Test embedding client implementations."""
     

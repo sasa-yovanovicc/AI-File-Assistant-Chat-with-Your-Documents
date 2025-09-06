@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import hashlib
 import json
+from datetime import datetime
 
 from ...domain.entities import Document, Chunk
 from ...domain.repositories import DocumentRepository
@@ -52,7 +53,7 @@ class FileDocumentRepository(DocumentRepository):
         """Save document to storage."""
         # Generate ID if not provided
         if not document.id:
-            document.id = self._generate_document_id(document.filename, document.content)
+            document.id = self._generate_document_id(document.source, document.content)
         
         # Save document content
         doc_path = self.storage_path / f"{document.id}.txt"
@@ -61,10 +62,10 @@ class FileDocumentRepository(DocumentRepository):
         
         # Save metadata
         self._metadata[document.id] = {
-            'filename': document.filename,
-            'file_type': document.file_type,
-            'file_size': document.file_size,
-            'upload_time': document.upload_time.isoformat(),
+            'filename': document.source,
+            'file_type': document.metadata.get('file_type', 'unknown'),
+            'file_size': document.metadata.get('file_size', len(document.content)),
+            'upload_time': document.created_at.isoformat(),
             'metadata': document.metadata
         }
         self._save_metadata()
@@ -90,12 +91,10 @@ class FileDocumentRepository(DocumentRepository):
         
         return Document(
             id=document_id,
-            filename=metadata['filename'],
+            source=metadata['filename'],
             content=content,
-            file_type=metadata['file_type'],
-            file_size=metadata['file_size'],
-            upload_time=metadata['upload_time'],
-            metadata=metadata.get('metadata', {})
+            metadata=metadata.get('metadata', {}),
+            created_at=datetime.fromisoformat(metadata['upload_time'])
         )
     
     @handle_errors(default_return=[], exception_type=DocumentError)

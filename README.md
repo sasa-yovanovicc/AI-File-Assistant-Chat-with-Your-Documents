@@ -22,6 +22,9 @@ This project demonstrates practical Retrieval‑Augmented Generation (RAG) – c
 * **Intelligent k-fallback strategy**: Automatically retries with different retrieval parameters (k+1, k-1, k-2) when initial answers are poor quality, improving answer reliability
 * Provides React frontend with Clean Architecture enabled by default
 
+## Screenshots
+![Summary of regulatory document](doc/img/who-is-bert.png)
+
 ### Answer Quality and Fallback Strategy
 
 The system includes an intelligent fallback mechanism that automatically improves answer quality:

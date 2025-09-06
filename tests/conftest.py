@@ -1,65 +1,79 @@
-"""Test configuration and fixtures for Clean Architecture testing."""
+"""Test configuration and fixtures."""
 
 import pytest
 import tempfile
-import os
-from typing import Generator
-from unittest.mock import Mock
+import shutil
+from typing import List, Generator
+import numpy as np
 
-from src.domain.repositories import VectorRepository, LLMRepository, DocumentRepository, EmbeddingRepository
-from src.domain.services import RetrievalService, AnswerService
-from src.application.use_cases import ChatUseCase
-from src.domain.entities import Document, Query, Chunk, QueryResult, ConfidenceLevel
+from src.domain.entities import Document, Chunk, Query, SearchResult
+from src.domain.repositories.vector_repository import VectorRepository 
+from src.domain.repositories.llm_repository import LLMRepository, EmbeddingRepository
+from src.domain.repositories.document_repository import DocumentRepository
 from src.container import Container
 
 
 class MockVectorRepository(VectorRepository):
-    """Mock implementation of VectorRepository for testing."""
+    """Mock vector repository for testing."""
     
     def __init__(self):
-        self._vectors = {}
-        self._chunks = {}
+        self.chunks = []
+        self.embeddings = []
     
-    def save_vectors(self, chunks: list, embeddings: list) -> bool:
-        for chunk, embedding in zip(chunks, embeddings):
-            self._vectors[chunk.id] = embedding
-            self._chunks[chunk.id] = chunk
-        return True
+    def add_chunks(self, chunks: List[Chunk], embeddings: np.ndarray) -> None:
+        """Add chunks with their embeddings."""
+        self.chunks.extend(chunks)
+        if len(self.embeddings) == 0:
+            self.embeddings = embeddings
+        else:
+            self.embeddings = np.vstack([self.embeddings, embeddings])
     
-    def search(self, query_embedding: list, k: int = 5) -> list:
-        # Simple mock search - return first k chunks
-        return list(self._chunks.values())[:k]
+    def save_vectors(self, chunks: List[Chunk], embeddings: List[List[float]]) -> None:
+        """Save vectors (alias for add_chunks)."""
+        self.add_chunks(chunks, np.array(embeddings))
     
-    def delete_by_source(self, source: str) -> bool:
-        to_delete = [chunk_id for chunk_id, chunk in self._chunks.items() 
-                    if chunk.metadata.get("source") == source]
-        for chunk_id in to_delete:
-            del self._chunks[chunk_id]
-            del self._vectors[chunk_id]
-        return True
+    def search(self, query_embedding: np.ndarray, k: int = 5) -> List[SearchResult]:
+        """Search for similar chunks."""
+        if not self.chunks:
+            return []
+        
+        # Simple mock search - return first k chunks with decreasing scores
+        results = []
+        for i, chunk in enumerate(self.chunks[:k]):
+            score = max(0.9 - i * 0.1, 0.1)  # Decreasing scores
+            results.append(SearchResult(
+                chunk=chunk,
+                score=score,
+                rank=i
+            ))
+        return results
     
     def count(self) -> int:
-        return len(self._chunks)
+        """Get total number of chunks."""
+        return len(self.chunks)
     
-    def clear(self) -> bool:
-        self._vectors.clear()
-        self._chunks.clear()
-        return True
+    def reset(self) -> None:
+        """Clear all data."""
+        self.chunks.clear()
+        self.embeddings = []
 
 
 class MockLLMRepository(LLMRepository):
-    """Mock implementation of LLMRepository for testing."""
+    """Mock LLM repository for testing."""
     
-    def __init__(self, mock_response: str = "Mock LLM response"):
-        self.mock_response = mock_response
-        self.call_count = 0
-        self.last_prompt = None
+    def __init__(self):
+        self.available = True
+        self.responses = {}
     
-    def generate_response(self, prompt: str, system_message: str = None, 
-                         temperature: float = 0.3, max_tokens: int = None) -> str:
-        self.call_count += 1
-        self.last_prompt = prompt
-        return self.mock_response
+    def generate_answer(self, prompt: str, **kwargs) -> str:
+        """Generate mock answer."""
+        if "Bert" in prompt or "BERT" in prompt:
+            return "BERT je model za obradu prirodnog jezika koji je razvio Google."
+        return "Ovo je test odgovor na vaše pitanje."
+    
+    def is_available(self) -> bool:
+        """Check availability."""
+        return self.available
 
 
 class MockEmbeddingRepository(EmbeddingRepository):
@@ -163,13 +177,13 @@ def test_container(mock_vector_repository, mock_llm_repository,
 @pytest.fixture
 def sample_document():
     """Provide sample document for testing."""
+    from datetime import datetime
     return Document(
         id="test_doc_1",
-        filename="test.txt",
+        source="test.txt",
         content="This is a test document with some content about artificial intelligence.",
-        file_type="text/plain",
-        file_size=1024,
-        metadata={"source": "test"}
+        metadata={"file_type": "text/plain", "file_size": 1024},
+        created_at=datetime.now()
     )
 
 
@@ -182,24 +196,26 @@ def sample_chunks():
             document_id="test_doc_1",
             content="This is a test document",
             chunk_index=0,
+            start_position=0,
+            end_position=24,
             metadata={"source": "test.txt", "score": 0.9}
         ),
         Chunk(
-            id="chunk_2", 
+            id="chunk_2",
             document_id="test_doc_1",
             content="with some content about artificial intelligence",
             chunk_index=1,
+            start_position=25,
+            end_position=72,
             metadata={"source": "test.txt", "score": 0.8}
         )
     ]
-
-
 @pytest.fixture
 def sample_query():
     """Provide sample query for testing."""
     return Query(
         text="What is artificial intelligence?",
-        max_results=5
+        k=5
     )
 
 

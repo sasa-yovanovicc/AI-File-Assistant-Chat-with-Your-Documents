@@ -80,9 +80,9 @@ class TestContainer:
         chat_use_case = container.chat_use_case()
         
         # Verify entire chain
-        assert chat_use_case._retrieval_service._vector_repository is container.vector_repository()
-        assert chat_use_case._retrieval_service._embedding_repository is container.embedding_repository()
-        assert chat_use_case._answer_service._llm_repository is container.llm_repository()
+        assert chat_use_case._retrieval_service._vector_repo is container.vector_repository()
+        assert chat_use_case._retrieval_service._embedding_repo is container.embedding_repository()
+        assert chat_use_case._answer_service._llm_repo is container.llm_repository()
     
     def test_container_reset(self):
         """Test container reset functionality."""

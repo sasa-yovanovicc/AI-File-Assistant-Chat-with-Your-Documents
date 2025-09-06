@@ -42,6 +42,7 @@ def handle_errors(
                 logger.log(log_level, error_msg, extra={
                     'function': func.__name__,
                     'original_error': str(e),
+                    'details': {},  # Always provide details field
                     'traceback': traceback.format_exc()
                 })
                 
