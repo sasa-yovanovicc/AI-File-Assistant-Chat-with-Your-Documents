@@ -183,98 +183,113 @@ def _clean_answer(ans: str) -> str:
     return ans2
 
 
+def _highlight_keywords(hits: List[dict], question: str) -> None:
+    """Highlight matched keywords in sources (lightweight UI hint)."""
+    kw = _keywords(question)
+    if not kw:
+        return
+    
+    for h in hits:
+        txt = h['text']
+        for kword in kw[:6]:  # limit to a few to avoid explosion
+            pattern = re.compile(re.escape(kword), re.IGNORECASE)
+            txt = pattern.sub(lambda m: f"**{m.group(0)}**", txt)
+        h['preview'] = txt[:220]
+
+def _generate_llm_answer(question: str, contexts: List[str], use_local_llm: bool = True) -> str:
+    """Generate answer using LLM (OpenAI or Ollama) or fallback to heuristic extraction."""
+    if not use_local_llm:
+        return extract_answer(question, contexts)
+    
+    ctx_joined = "\n\n".join(f"[DOC {i+1}]\n{c}" for i, c in enumerate(contexts[:6]))
+    prompt = (
+        "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
+        f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
+    )
+    
+    try:
+        if USE_OPENAI and OPENAI_API_KEY and openai:
+            # Use OpenAI GPT for completion
+            openai.api_key = OPENAI_API_KEY
+            response = openai.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=OPENAI_MAX_TOKENS,
+                temperature=OPENAI_TEMPERATURE
+            )
+            gen = response.choices[0].message.content
+        elif _ollama_generate is not None:
+            # Fallback to Ollama
+            gen = _ollama_generate(prompt, model=OLLAMA_MODEL, stream=False)
+        else:
+            # No LLM available, use heuristic
+            return extract_answer(question, contexts)
+        
+        if isinstance(gen, str) and gen.strip():
+            # Optional post-LLM guard: if LLM answer contains none of the keywords, fallback
+            cleaned = _clean_answer(gen)
+            low_ans = cleaned.lower()
+            kw_all = set(_keywords(question))
+            if kw_all and not any(kw in low_ans for kw in kw_all):
+                return extract_answer(question, contexts)
+            else:
+                return cleaned
+        else:
+            return extract_answer(question, contexts)
+    except Exception as e:
+        # Fallback to heuristic if LLM fails
+        print(f"LLM error: {e}")  # for debugging
+        return extract_answer(question, contexts)
+
+def _assess_confidence(hits: List[dict], coverage: float, question: str) -> tuple[str, str]:
+    """Assess confidence level and reason based on hits and coverage."""
+    kw_all = set(_keywords(question))
+    
+    if not hits:
+        return "none", "no_hits"
+    elif hits[0]['score'] < MIN_SCORE and coverage == 0:
+        return "none", "below_min_score_and_no_coverage"
+    elif STRICT_MODE and kw_all and coverage < MIN_KEYWORD_COVERAGE:
+        return "none", "low_keyword_coverage"
+    elif hits[0]['score'] < MIN_SCORE:
+        return "low", f"score<{MIN_SCORE:.2f}"
+    else:
+        return "high", "ok"
+
+def _calculate_keyword_coverage(question: str, contexts: List[str]) -> float:
+    """Calculate the proportion of keywords from question found in contexts."""
+    kw_all = set(_keywords(question))
+    if not kw_all or not contexts:
+        return 0.0
+    
+    concat_low = " \n ".join(contexts).lower()
+    present = {kw for kw in kw_all if kw in concat_low}
+    return len(present) / len(kw_all)
+
 def answer_question(question: str, k: int = DEFAULT_ANSWER_K, use_local_llm: bool = True) -> dict:
     hits = retrieve(question, k=k)
     contexts = [h['text'] for h in hits]
     prompt = build_prompt(question, contexts)
 
-    kw_all = set(_keywords(question))
-    # Compute keyword coverage across retrieved contexts
-    coverage = 0.0
-    if kw_all and contexts:
-        concat_low = " \n ".join(contexts).lower()
-        present = {kw for kw in kw_all if kw in concat_low}
-        coverage = len(present) / max(1, len(kw_all))
+    # Calculate keyword coverage
+    coverage = _calculate_keyword_coverage(question, contexts)
 
-    confidence = "high"
-    reason = "ok"
-    if not hits:
+    # Determine confidence and reason
+    confidence, reason = _assess_confidence(hits, coverage, question)
+
+    if confidence == "none":
         answer = "Not enough information in the local documents."
-        confidence = "none"
-        reason = "no_hits"
-    elif hits[0]['score'] < MIN_SCORE and coverage == 0:
-        answer = "Not enough information in the local documents."
-        confidence = "none"
-        reason = "below_min_score_and_no_coverage"
-    elif STRICT_MODE and kw_all and coverage < MIN_KEYWORD_COVERAGE:
-        answer = "Not enough information in the local documents."
-        confidence = "none"
-        reason = "low_keyword_coverage"
     else:
         low_conf = hits[0]['score'] < MIN_SCORE
         if low_conf:
             confidence = "low"
             reason = f"score<{MIN_SCORE:.2f}"  # still try to extract
         # Build LLM prompt and choose provider
-        if use_local_llm:
-            ctx_joined = "\n\n".join(f"[DOC {i+1}]\n{c}" for i, c in enumerate(contexts[:6]))
-            prompt = (
-                "Answer in an encyclopedic style using ONLY the provided context. Be precise, factual, and concise like a Wikipedia entry. If the answer is missing respond exactly 'Not enough information in the local documents.'\n"
-                f"Question: {question}\n\nContext:\n{ctx_joined}\n\nAnswer:"
-            )
-            
-            # Try OpenAI first if configured, fallback to Ollama
-            try:
-                if USE_OPENAI and OPENAI_API_KEY and openai:
-                    # Use OpenAI GPT for completion
-                    openai.api_key = OPENAI_API_KEY
-                    response = openai.chat.completions.create(
-                        model=OPENAI_MODEL,
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=OPENAI_MAX_TOKENS,
-                        temperature=OPENAI_TEMPERATURE
-                    )
-                    gen = response.choices[0].message.content
-                elif _ollama_generate is not None:
-                    # Fallback to Ollama
-                    gen = _ollama_generate(prompt, model=OLLAMA_MODEL, stream=False)
-                else:
-                    # No LLM available, use heuristic
-                    gen = None
-                
-                if isinstance(gen, str) and gen.strip():
-                    # Optional post-LLM guard: if LLM answer contains none of the keywords, fallback
-                    cleaned = _clean_answer(gen)
-                    low_ans = cleaned.lower()
-                    if kw_all and not any(kw in low_ans for kw in kw_all):
-                        answer = extract_answer(question, contexts) if not low_conf else extract_answer(question, contexts)
-                        confidence = "low"
-                        reason = "llm_no_keyword_overlap"
-                    else:
-                        answer = cleaned
-                else:
-                    answer = extract_answer(question, contexts)
-            except Exception as e:
-                # Fallback to heuristic if LLM fails
-                answer = extract_answer(question, contexts)
-                print(f"LLM error: {e}")  # for debugging
-        else:
-            # Try definitional pattern first (e.g., "Ko je <ime>?")
-            defin = _definitional_extract(question, contexts)
-            if defin:
-                answer = defin
-            else:
-                answer = extract_answer(question, contexts)
+        answer = _generate_llm_answer(question, contexts, use_local_llm)
 
     # Highlight matched keywords in sources (lightweight UI hint)
-    kw = _keywords(question)
-    if kw:
-        for h in hits:
-            txt = h['text']
-            for kword in kw[:6]:  # limit to a few to avoid explosion
-                pattern = re.compile(re.escape(kword), re.IGNORECASE)
-                txt = pattern.sub(lambda m: f"**{m.group(0)}**", txt)
-            h['preview'] = txt[:220]
+    _highlight_keywords(hits, question)
+    
     return {
         "question": question,
         "answer": answer,

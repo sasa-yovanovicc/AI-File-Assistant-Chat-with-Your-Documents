@@ -62,6 +62,14 @@ class VectorStore:
             if self.index is None:
                 return []
             q = query_vector.reshape(1, -1)
+            
+            # Check dimension compatibility before search
+            if q.shape[1] != self.index.d:
+                print(f"ERROR: Query vector dimension ({q.shape[1]}) does not match index dimension ({self.index.d})")
+                print("This usually happens when switching between OpenAI and local embeddings.")
+                print("You need to re-ingest documents with consistent embedding model.")
+                return []
+            
             scores, idxs = self.index.search(q, k)
             cur = self.conn.cursor()
             cur.execute("SELECT id, source, chunk_index, text FROM documents")
